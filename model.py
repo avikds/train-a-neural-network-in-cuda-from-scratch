@@ -1027,8 +1027,53 @@ void backward_mlp(
     );
 }
 
-# Step 18 - sgd_update_kernel (not yet solved)
-# TODO: implement
+# Step 18 - sgd_update_kernel
+__global__ void sgd_update_kernel(
+    float* param,
+    const float* grad,
+    float lr,
+    int n
+) {
+    // Assign one CUDA thread to each parameter.
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Ignore threads outside the parameter array.
+    if (i >= n) {
+        return;
+    }
+
+    // Gradient descent update: param[i] -= learning_rate * gradient[i].
+    param[i] -= lr * grad[i];
+}
+
+void launch_sgd_update(
+    float* param,
+    const float* grad,
+    float lr,
+    int n
+) {
+    // Use 256 threads per block.
+    const int threads_per_block = 256;
+
+    // Avoid launching a zero-sized grid.
+    if (n <= 0) {
+        return;
+    }
+
+    // Calculate enough blocks to cover all n parameters.
+    const int blocks = (n + threads_per_block - 1) / threads_per_block;
+
+    // Launch the SGD update kernel.
+    sgd_update_kernel<<<blocks, threads_per_block>>>(
+        param, grad, lr, n
+    );
+
+    // Report immediate kernel-launch errors without synchronizing.
+    report_cuda_error(
+        cudaGetLastError(),
+        "sgd_update_kernel launch"
+    );
+}
 
 # Step 19 - train_step (not yet solved)
 # TODO: implement
