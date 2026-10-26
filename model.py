@@ -930,8 +930,45 @@ void launch_column_sum(
     );
 }
 
-# Step 16 - relu_backward_kernel (not yet solved)
-# TODO: implement
+# Step 16 - relu_backward_kernel
+__global__ void relu_backward_kernel(float* dH, const float* H, int n) {
+    // Each CUDA thread processes one element.
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Ignore threads outside the array.
+    if (i >= n) {
+        return;
+    }
+
+    // ReLU derivative:
+    // Preserve the gradient where the forward activation was positive.
+    // Otherwise, set the gradient to zero.
+    if (H[i] <= 0.0f) {
+        dH[i] = 0.0f;
+    }
+}
+
+void launch_relu_backward(float* dH, const float* H, int n) {
+    // Avoid launching a zero-sized grid.
+    if (n <= 0) {
+        return;
+    }
+
+    // Use 256 threads per block.
+    const int threads_per_block = 256;
+
+    // Calculate enough blocks to cover all n elements.
+    const int blocks = (n + threads_per_block - 1) / threads_per_block;
+
+    // Launch the backward ReLU kernel.
+    relu_backward_kernel<<<blocks, threads_per_block>>>(dH, H, n);
+
+    // Report immediate kernel-launch errors without synchronizing.
+    report_cuda_error(
+        cudaGetLastError(),
+        "relu_backward_kernel launch"
+    );
+}
 
 # Step 17 - backward_mlp (not yet solved)
 # TODO: implement
