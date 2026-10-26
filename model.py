@@ -879,8 +879,56 @@ void launch_matmul_nt(
     );
 }
 
-# Step 15 - column_sum_kernel (not yet solved)
-# TODO: implement
+# Step 15 - column_sum_kernel
+__global__ void column_sum_kernel(
+    const float* D,
+    float* out,
+    int rows,
+    int cols
+) {
+    // Assign one CUDA thread to each column.
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Ignore threads outside the matrix's column range.
+    if (c >= cols) {
+        return;
+    }
+
+    // Sum all elements in column c.
+    float sum = 0.0f;
+
+    for (int r = 0; r < rows; ++r) {
+        sum += D[r * cols + c];
+    }
+
+    // Overwrite the output with this column's sum.
+    out[c] = sum;
+}
+
+void launch_column_sum(
+    const float* D,
+    float* out,
+    int rows,
+    int cols
+) {
+    // Use 128 threads per block.
+    const int threads_per_block = 128;
+
+    // Calculate enough blocks to cover every column.
+    const int blocks =
+        (cols + threads_per_block - 1) / threads_per_block;
+
+    // Launch the column-summation kernel.
+    column_sum_kernel<<<blocks, threads_per_block>>>(
+        D, out, rows, cols
+    );
+
+    // Report immediate kernel-launch errors without synchronizing.
+    report_cuda_error(
+        cudaGetLastError(),
+        "column_sum_kernel launch"
+    );
+}
 
 # Step 16 - relu_backward_kernel (not yet solved)
 # TODO: implement
