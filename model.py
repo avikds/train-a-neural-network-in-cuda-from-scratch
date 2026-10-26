@@ -1117,8 +1117,46 @@ float train_step(
     return loss;
 }
 
-# Step 20 - train_mlp (not yet solved)
-# TODO: implement
+# Step 20 - train_mlp
+float train_mlp(
+    MLP& m,
+    Workspace& w,
+    const float* X,
+    const int* labels,
+    int batch,
+    float lr,
+    int epochs,
+    int print_every
+) {
+    // No training occurs when epochs <= 0.
+    // Return zero and leave the model unchanged.
+    if (epochs <= 0) {
+        return 0.0f;
+    }
+
+    float last_loss = 0.0f;
+
+    // Run the requested number of full-batch training steps.
+    // Epoch numbering starts at 1.
+    for (int epoch = 1; epoch <= epochs; ++epoch) {
+        // Execute one complete training step and retain its loss.
+        last_loss = train_step(m, w, X, labels, batch, lr);
+
+        // Print at epoch 1 and every print_every epochs,
+        // but only when print_every is positive.
+        if (print_every > 0 &&
+            (epoch == 1 || epoch % print_every == 0)) {
+            std::printf(
+                "epoch %5d  loss %.4f\n",
+                epoch,
+                last_loss
+            );
+        }
+    }
+
+    // Return the loss from the final training step.
+    return last_loss;
+}
 
 # Step 21 - accuracy_kernel (not yet solved)
 # TODO: implement
