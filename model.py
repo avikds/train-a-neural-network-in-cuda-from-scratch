@@ -132,8 +132,62 @@ void make_spiral(float* X, int* y, int points_per_class,
     }
 }
 
-# Step 4 - matmul_kernel (not yet solved)
-# TODO: implement
+# Step 4 - matmul_kernel
+__global__ void matmul_kernel(
+    const float* A,
+    const float* B,
+    float* C,
+    int M,
+    int N,
+    int K
+) {
+    // Map the x dimension to the output column.
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Map the y dimension to the output row.
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Ignore threads outside the M x N output matrix.
+    if (row >= M || col >= N) {
+        return;
+    }
+
+    // Compute one element of C = A * B.
+    // A has shape M x K, B has shape K x N, and C has shape M x N.
+    float sum = 0.0f;
+
+    for (int k = 0; k < K; ++k) {
+        sum += A[row * K + k] * B[k * N + col];
+    }
+
+    // Store the result in row-major order.
+    C[row * N + col] = sum;
+}
+
+void launch_matmul(
+    const float* A,
+    const float* B,
+    float* C,
+    int M,
+    int N,
+    int K
+) {
+    // Each block contains 16 x 16 = 256 threads.
+    dim3 block(16, 16);
+
+    // Round up so the grid covers all rows and columns.
+    dim3 grid(
+        (N + block.x - 1) / block.x,
+        (M + block.y - 1) / block.y
+    );
+
+    // Launch the matrix multiplication kernel.
+    // This launch is asynchronous; do not synchronize here.
+    matmul_kernel<<<grid, block>>>(A, B, C, M, N, K);
+
+    // Check for errors reported by the kernel launch.
+    report_cuda_error(cudaGetLastError(), "matmul_kernel launch");
+}
 
 # Step 5 - add_bias_kernel (not yet solved)
 # TODO: implement
