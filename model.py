@@ -315,8 +315,128 @@ void launch_softmax_rows(
     );
 }
 
-# Step 8 - cross_entropy_kernel (not yet solved)
-# TODO: implement
+# Step 8 - cross_entropy_kernel
+__global__ void cross_entropy_kernel(
+    const float* probs,
+    const int* labels,
+    int rows,
+    int cols,
+    float* total
+) {
+    // Shared memory for the 256 loss values in this block.
+    __shared__ float shared_sum[256];
+
+    int tid = threadIdx.x;
+    int r = blockIdx.x * blockDim.x + tid;
+
+    // Threads without a corresponding sample contribute zero.
+    float loss = 0.0f;
+
+    if (r < rows) {
+        // Obtain the probability assigned to the correct class.
+        int label = labels[r];
+        float p = probs[r * cols + label];
+
+        // Avoid log(0) and compute the sample's cross-entropy loss.
+        loss = -logf(fmaxf(p, 1e-12f));
+    }
+
+    // Store this thread's loss in shared memory.
+    shared_sum[tid] = loss;
+    __syncthreads();
+
+    // Reduce the 256 values using a binary tree.
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            shared_sum[tid] += shared_sum[tid + stride];
+        }
+
+        // Ensure all updates at this level finish before the next level.
+        __syncthreads();
+    }
+
+    // Add this block's sum to the global total.
+    if (tid == 0) {
+        atomicAdd(total, shared_sum[0]);
+    }
+}
+
+float cross_entropy_loss(
+    const float* probs,
+    const int* labels,
+    int rows,
+    int cols
+) {
+    // Avoid launching an invalid grid or dividing by zero.
+    if (rows <= 0 || cols <= 0) {
+        return 0.0f;
+    }
+
+    // Allocate a device scalar to accumulate the total loss.
+    float* d_total = nullptr;
+
+    if (report_cuda_error(
+            cudaMalloc(reinterpret_cast<void**>(&d_total), sizeof(float)),
+            "cudaMalloc cross-entropy total")) {
+        return 0.0f;
+    }
+
+    // Initialize the global accumulator to zero.
+    if (report_cuda_error(
+            cudaMemset(d_total, 0, sizeof(float)),
+            "cudaMemset cross-entropy total")) {
+        report_cuda_error(
+            cudaFree(d_total),
+            "cudaFree cross-entropy total after memset failure");
+        return 0.0f;
+    }
+
+    // Use 256 threads per block, with one thread per sample.
+    const int threads_per_block = 256;
+    const int blocks =
+        (rows + threads_per_block - 1) / threads_per_block;
+
+    // Launch the cross-entropy reduction kernel.
+    cross_entropy_kernel<<<blocks, threads_per_block>>>(
+        probs, labels, rows, cols, d_total
+    );
+
+    // Check for an immediate kernel-launch error.
+    if (report_cuda_error(
+            cudaGetLastError(),
+            "cross_entropy_kernel launch")) {
+        report_cuda_error(
+            cudaFree(d_total),
+            "cudaFree cross-entropy total after launch failure");
+        return 0.0f;
+    }
+
+    // Copying the result back also synchronizes the preceding GPU work.
+    float total = 0.0f;
+
+    if (report_cuda_error(
+            cudaMemcpy(
+                &total,
+                d_total,
+                sizeof(float),
+                cudaMemcpyDeviceToHost
+            ),
+            "cudaMemcpy cross-entropy total to host")) {
+        report_cuda_error(
+            cudaFree(d_total),
+            "cudaFree cross-entropy total after copy failure");
+        return 0.0f;
+    }
+
+    // Release the temporary device allocation.
+    report_cuda_error(
+        cudaFree(d_total),
+        "cudaFree cross-entropy total"
+    );
+
+    // Return the mean loss across all samples.
+    return total / static_cast<float>(rows);
+}
 
 # Step 9 - init_mlp (not yet solved)
 # TODO: implement
