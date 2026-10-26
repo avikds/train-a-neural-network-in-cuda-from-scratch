@@ -189,8 +189,35 @@ void launch_matmul(
     report_cuda_error(cudaGetLastError(), "matmul_kernel launch");
 }
 
-# Step 5 - add_bias_kernel (not yet solved)
-# TODO: implement
+# Step 5 - add_bias_kernel
+__global__ void add_bias_kernel(float* Z, const float* b, int rows, int cols) {
+    // Each thread handles one matrix element.
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Total number of elements in the matrix.
+    int total = rows * cols;
+
+    // Ignore threads outside the matrix.
+    if (i >= total) {
+        return;
+    }
+
+    // Broadcast the corresponding column's bias across every row.
+    Z[i] += b[i % cols];
+}
+
+void launch_add_bias(float* Z, const float* b, int rows, int cols) {
+    // Process the entire matrix using 256 threads per block.
+    int total = rows * cols;
+    int threads_per_block = 256;
+    int blocks = (total + threads_per_block - 1) / threads_per_block;
+
+    // Launch the bias-addition kernel.
+    add_bias_kernel<<<blocks, threads_per_block>>>(Z, b, rows, cols);
+
+    // Report any immediate kernel-launch error without synchronizing.
+    report_cuda_error(cudaGetLastError(), "add_bias_kernel launch");
+}
 
 # Step 6 - relu_kernel (not yet solved)
 # TODO: implement
