@@ -517,8 +517,168 @@ void free_mlp(MLP& m) {
     }
 }
 
-# Step 10 - alloc_workspace (not yet solved)
-# TODO: implement
+# Step 10 - alloc_workspace
+struct Workspace {
+    int batch;
+    float *H, *P;                    // Forward: hidden activations, probabilities
+    float *dZ2, *dH;                 // Backward: logits and hidden gradients
+    float *dW1, *db1, *dW2, *db2;    // Parameter gradients
+};
+
+// Forward declaration for cleanup on allocation failure.
+void free_workspace(Workspace& w);
+
+Workspace alloc_workspace(const MLP& m, int batch) {
+    Workspace w = {
+        batch,
+        nullptr, nullptr,
+        nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr
+    };
+
+    // Allocate a float buffer on the GPU and initialize it to zero.
+    // Returns false if either allocation or initialization fails.
+    auto alloc_zero = [](float*& ptr,
+                         size_t count,
+                         const char* alloc_name,
+                         const char* memset_name) -> bool {
+        size_t bytes = count * sizeof(float);
+
+        if (report_cuda_error(
+                cudaMalloc(reinterpret_cast<void**>(&ptr), bytes),
+                alloc_name)) {
+            return false;
+        }
+
+        if (report_cuda_error(
+                cudaMemset(ptr, 0, bytes),
+                memset_name)) {
+            return false;
+        }
+
+        return true;
+    };
+
+    // Forward-pass buffers.
+    if (!alloc_zero(
+            w.H,
+            static_cast<size_t>(batch) * m.hidden,
+            "cudaMalloc workspace H",
+            "cudaMemset workspace H")) {
+        free_workspace(w);
+        return w;
+    }
+
+    if (!alloc_zero(
+            w.P,
+            static_cast<size_t>(batch) * m.out_dim,
+            "cudaMalloc workspace P",
+            "cudaMemset workspace P")) {
+        free_workspace(w);
+        return w;
+    }
+
+    // Backward-pass buffers.
+    if (!alloc_zero(
+            w.dZ2,
+            static_cast<size_t>(batch) * m.out_dim,
+            "cudaMalloc workspace dZ2",
+            "cudaMemset workspace dZ2")) {
+        free_workspace(w);
+        return w;
+    }
+
+    if (!alloc_zero(
+            w.dH,
+            static_cast<size_t>(batch) * m.hidden,
+            "cudaMalloc workspace dH",
+            "cudaMemset workspace dH")) {
+        free_workspace(w);
+        return w;
+    }
+
+    // Parameter-gradient buffers.
+    if (!alloc_zero(
+            w.dW1,
+            static_cast<size_t>(m.in_dim) * m.hidden,
+            "cudaMalloc workspace dW1",
+            "cudaMemset workspace dW1")) {
+        free_workspace(w);
+        return w;
+    }
+
+    if (!alloc_zero(
+            w.db1,
+            static_cast<size_t>(m.hidden),
+            "cudaMalloc workspace db1",
+            "cudaMemset workspace db1")) {
+        free_workspace(w);
+        return w;
+    }
+
+    if (!alloc_zero(
+            w.dW2,
+            static_cast<size_t>(m.hidden) * m.out_dim,
+            "cudaMalloc workspace dW2",
+            "cudaMemset workspace dW2")) {
+        free_workspace(w);
+        return w;
+    }
+
+    if (!alloc_zero(
+            w.db2,
+            static_cast<size_t>(m.out_dim),
+            "cudaMalloc workspace db2",
+            "cudaMemset workspace db2")) {
+        free_workspace(w);
+        return w;
+    }
+
+    return w;
+}
+
+void free_workspace(Workspace& w) {
+    // Release each allocated buffer and clear its pointer.
+    if (w.H != nullptr) {
+        report_cuda_error(cudaFree(w.H), "cudaFree workspace H");
+        w.H = nullptr;
+    }
+
+    if (w.P != nullptr) {
+        report_cuda_error(cudaFree(w.P), "cudaFree workspace P");
+        w.P = nullptr;
+    }
+
+    if (w.dZ2 != nullptr) {
+        report_cuda_error(cudaFree(w.dZ2), "cudaFree workspace dZ2");
+        w.dZ2 = nullptr;
+    }
+
+    if (w.dH != nullptr) {
+        report_cuda_error(cudaFree(w.dH), "cudaFree workspace dH");
+        w.dH = nullptr;
+    }
+
+    if (w.dW1 != nullptr) {
+        report_cuda_error(cudaFree(w.dW1), "cudaFree workspace dW1");
+        w.dW1 = nullptr;
+    }
+
+    if (w.db1 != nullptr) {
+        report_cuda_error(cudaFree(w.db1), "cudaFree workspace db1");
+        w.db1 = nullptr;
+    }
+
+    if (w.dW2 != nullptr) {
+        report_cuda_error(cudaFree(w.dW2), "cudaFree workspace dW2");
+        w.dW2 = nullptr;
+    }
+
+    if (w.db2 != nullptr) {
+        report_cuda_error(cudaFree(w.db2), "cudaFree workspace db2");
+        w.db2 = nullptr;
+    }
+}
 
 # Step 11 - forward_mlp (not yet solved)
 # TODO: implement
