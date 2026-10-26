@@ -1280,6 +1280,97 @@ float accuracy(
            static_cast<float>(rows);
 }
 
-# Step 22 - time_train_step_ms (not yet solved)
-# TODO: implement
+# Step 22 - time_train_step_ms
+float time_train_step_ms(
+    MLP& m,
+    Workspace& w,
+    const float* X,
+    const int* labels,
+    int batch,
+    float lr,
+    int reps
+) {
+    // 1. Warm up the kernels to pay one-time launch/setup costs.
+    // This performs one training update but is not included in timing.
+    train_step(m, w, X, labels, batch, lr);
+
+    // Avoid division by zero or a negative repetition count.
+    if (reps <= 0) {
+        return 0.0f;
+    }
+
+    // 2. Create CUDA events for measuring elapsed GPU time.
+    cudaEvent_t start = nullptr;
+    cudaEvent_t stop = nullptr;
+
+    if (report_cuda_error(
+            cudaEventCreate(&start),
+            "cudaEventCreate start")) {
+        return 0.0f;
+    }
+
+    if (report_cuda_error(
+            cudaEventCreate(&stop),
+            "cudaEventCreate stop")) {
+        report_cuda_error(
+            cudaEventDestroy(start),
+            "cudaEventDestroy start after creation failure");
+        return 0.0f;
+    }
+
+    // Record the beginning of the timed region.
+    if (report_cuda_error(
+            cudaEventRecord(start, 0),
+            "cudaEventRecord start")) {
+        report_cuda_error(cudaEventDestroy(start), "cudaEventDestroy start");
+        report_cuda_error(cudaEventDestroy(stop), "cudaEventDestroy stop");
+        return 0.0f;
+    }
+
+    // 3. Execute the requested number of training steps.
+    for (int i = 0; i < reps; ++i) {
+        train_step(m, w, X, labels, batch, lr);
+    }
+
+    // Record the end of the timed region in the same stream.
+    if (report_cuda_error(
+            cudaEventRecord(stop, 0),
+            "cudaEventRecord stop")) {
+        report_cuda_error(cudaEventDestroy(start), "cudaEventDestroy start");
+        report_cuda_error(cudaEventDestroy(stop), "cudaEventDestroy stop");
+        return 0.0f;
+    }
+
+    // Wait until the stop event has completed on the GPU.
+    if (report_cuda_error(
+            cudaEventSynchronize(stop),
+            "cudaEventSynchronize stop")) {
+        report_cuda_error(cudaEventDestroy(start), "cudaEventDestroy start");
+        report_cuda_error(cudaEventDestroy(stop), "cudaEventDestroy stop");
+        return 0.0f;
+    }
+
+    // 4. Obtain elapsed GPU time in milliseconds.
+    float elapsed_ms = 0.0f;
+
+    if (report_cuda_error(
+            cudaEventElapsedTime(&elapsed_ms, start, stop),
+            "cudaEventElapsedTime")) {
+        report_cuda_error(cudaEventDestroy(start), "cudaEventDestroy start");
+        report_cuda_error(cudaEventDestroy(stop), "cudaEventDestroy stop");
+        return 0.0f;
+    }
+
+    // 5. Release both CUDA events.
+    report_cuda_error(
+        cudaEventDestroy(start),
+        "cudaEventDestroy start");
+
+    report_cuda_error(
+        cudaEventDestroy(stop),
+        "cudaEventDestroy stop");
+
+    // Return average GPU time per timed training step.
+    return elapsed_ms / static_cast<float>(reps);
+}
 
