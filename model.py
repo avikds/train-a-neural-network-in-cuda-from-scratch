@@ -680,8 +680,32 @@ void free_workspace(Workspace& w) {
     }
 }
 
-# Step 11 - forward_mlp (not yet solved)
-# TODO: implement
+# Step 11 - forward_mlp
+void forward_mlp(const MLP& m, const float* X, int batch, Workspace& w) {
+    // Layer 1: H = X @ W1
+    // X:  batch x in_dim
+    // W1: in_dim x hidden
+    // H:  batch x hidden
+    launch_matmul(X, m.W1, w.H, batch, m.hidden, m.in_dim);
+
+    // Add the first layer's bias to every row.
+    launch_add_bias(w.H, m.b1, batch, m.hidden);
+
+    // Apply ReLU to the hidden activations in place.
+    launch_relu(w.H, batch * m.hidden);
+
+    // Layer 2: P = H @ W2
+    // H:  batch x hidden
+    // W2: hidden x out_dim
+    // P:  batch x out_dim
+    launch_matmul(w.H, m.W2, w.P, batch, m.out_dim, m.hidden);
+
+    // Add the output layer's bias to every row.
+    launch_add_bias(w.P, m.b2, batch, m.out_dim);
+
+    // Convert output logits into class probabilities in place.
+    launch_softmax_rows(w.P, w.P, batch, m.out_dim);
+}
 
 # Step 12 - softmax_ce_grad_kernel (not yet solved)
 # TODO: implement
