@@ -707,8 +707,61 @@ void forward_mlp(const MLP& m, const float* X, int batch, Workspace& w) {
     launch_softmax_rows(w.P, w.P, batch, m.out_dim);
 }
 
-# Step 12 - softmax_ce_grad_kernel (not yet solved)
-# TODO: implement
+# Step 12 - softmax_ce_grad_kernel
+__global__ void softmax_ce_grad_kernel(
+    const float* P,
+    const int* labels,
+    float* dZ,
+    int rows,
+    int cols
+) {
+    // Each thread processes one element of the rows x cols matrix.
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int total = rows * cols;
+
+    // Ignore threads outside the matrix.
+    if (idx >= total) {
+        return;
+    }
+
+    // Convert the linear index to a row and column.
+    int r = idx / cols;
+    int j = idx % cols;
+
+    // For the correct class, subtract 1 from its predicted probability.
+    // For all other classes, retain the predicted probability.
+    float target = (j == labels[r]) ? 1.0f : 0.0f;
+
+    // Gradient of the mean softmax cross-entropy loss.
+    dZ[idx] = (P[idx] - target) / static_cast<float>(rows);
+}
+
+void launch_softmax_ce_grad(
+    const float* P,
+    const int* labels,
+    float* dZ,
+    int rows,
+    int cols
+) {
+    // Use 256 threads per block.
+    const int threads_per_block = 256;
+
+    // Calculate the number of blocks needed for all matrix elements.
+    int total = rows * cols;
+    int blocks = (total + threads_per_block - 1) / threads_per_block;
+
+    // Launch the gradient kernel.
+    softmax_ce_grad_kernel<<<blocks, threads_per_block>>>(
+        P, labels, dZ, rows, cols
+    );
+
+    // Report any immediate kernel-launch error without synchronizing.
+    report_cuda_error(
+        cudaGetLastError(),
+        "softmax_ce_grad_kernel launch"
+    );
+}
 
 # Step 13 - matmul_tn_kernel (not yet solved)
 # TODO: implement
