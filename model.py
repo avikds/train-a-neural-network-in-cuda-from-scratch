@@ -81,8 +81,56 @@ void device_download(float* host, const float* dev, int n) {
         "cudaMemcpy (float device to host)");
 }
 
-# Step 3 - make_spiral (not yet solved)
-# TODO: implement
+# Step 3 - make_spiral
+#include <cmath>
+
+float lcg_uniform(unsigned* state) {
+    // Update the state using a 32-bit linear congruential generator.
+    // Unsigned integer arithmetic wraps around on overflow.
+    *state = *state * 1664525u + 1013904223u;
+
+    // Use the upper 24 bits to generate a float in [0, 1).
+    return (*state >> 8) / 16777216.0f;
+}
+
+float lcg_normal(unsigned* state) {
+    // Draw two uniform random numbers in the required order.
+    float u1 = lcg_uniform(state);
+    float u2 = lcg_uniform(state);
+
+    // Box-Muller transform: generate one standard normal sample.
+    // The small epsilon prevents taking log(0).
+    return sqrtf(-2.0f * logf(u1 + 1e-7f))
+           * cosf(6.2831853f * u2);
+}
+
+void make_spiral(float* X, int* y, int points_per_class,
+                 int classes, float noise, unsigned seed) {
+    // Initialize one deterministic random-number generator for the dataset.
+    unsigned state = seed;
+
+    // Generate points class by class.
+    for (int c = 0; c < classes; ++c) {
+        for (int i = 0; i < points_per_class; ++i) {
+            // Row-major index of the current point.
+            int k = c * points_per_class + i;
+
+            // Radius increases from 0 to 1 within each class.
+            float r = (float)i / (float)(points_per_class - 1);
+
+            // Add deterministic Gaussian noise to the spiral angle.
+            float t = 4.0f * c + 4.0f * r
+                      + noise * lcg_normal(&state);
+
+            // Store the two coordinates in row-major order.
+            X[2 * k]     = r * sinf(t);
+            X[2 * k + 1] = r * cosf(t);
+
+            // Store the class label for this point.
+            y[k] = c;
+        }
+    }
+}
 
 # Step 4 - matmul_kernel (not yet solved)
 # TODO: implement
