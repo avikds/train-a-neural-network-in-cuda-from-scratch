@@ -1158,8 +1158,127 @@ float train_mlp(
     return last_loss;
 }
 
-# Step 21 - accuracy_kernel (not yet solved)
-# TODO: implement
+# Step 21 - accuracy_kernel
+__global__ void accuracy_kernel(
+    const float* probs,
+    const int* labels,
+    int rows,
+    int cols,
+    int* correct
+) {
+    // Assign one CUDA thread to each sample.
+    int r = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Ignore threads outside the batch.
+    if (r >= rows) {
+        return;
+    }
+
+    // Start with class 0 so ties favor the lowest class index.
+    int best_class = 0;
+    float best_prob = probs[r * cols];
+
+    // Find the class with the highest probability.
+    // Using > rather than >= preserves the first class in a tie.
+    for (int j = 1; j < cols; ++j) {
+        float p = probs[r * cols + j];
+
+        if (p > best_prob) {
+            best_prob = p;
+            best_class = j;
+        }
+    }
+
+    // Atomically increment the correct-prediction counter.
+    if (best_class == labels[r]) {
+        atomicAdd(correct, 1);
+    }
+}
+
+float accuracy(
+    const float* probs,
+    const int* labels,
+    int rows,
+    int cols
+) {
+    // Avoid invalid launches and division by zero.
+    if (rows <= 0 || cols <= 0) {
+        return 0.0f;
+    }
+
+    // Allocate a device-side integer counter.
+    int* d_correct = nullptr;
+
+    if (report_cuda_error(
+            cudaMalloc(
+                reinterpret_cast<void**>(&d_correct),
+                sizeof(int)
+            ),
+            "cudaMalloc accuracy counter")) {
+        return 0.0f;
+    }
+
+    // Initialize the counter to zero before launching the kernel.
+    if (report_cuda_error(
+            cudaMemset(d_correct, 0, sizeof(int)),
+            "cudaMemset accuracy counter")) {
+        report_cuda_error(
+            cudaFree(d_correct),
+            "cudaFree accuracy counter after memset failure"
+        );
+        return 0.0f;
+    }
+
+    // Use 256 threads per block, covering all rows.
+    const int threads_per_block = 256;
+    const int blocks =
+        (rows + threads_per_block - 1) / threads_per_block;
+
+    // Launch the accuracy kernel.
+    accuracy_kernel<<<blocks, threads_per_block>>>(
+        probs, labels, rows, cols, d_correct
+    );
+
+    // Check for immediate kernel-launch errors.
+    if (report_cuda_error(
+            cudaGetLastError(),
+            "accuracy_kernel launch")) {
+        report_cuda_error(
+            cudaFree(d_correct),
+            "cudaFree accuracy counter after launch failure"
+        );
+        return 0.0f;
+    }
+
+    // Copy the correct-prediction count back to the CPU.
+    // This device-to-host copy synchronizes the preceding kernel.
+    int correct_count = 0;
+
+    if (report_cuda_error(
+            cudaMemcpy(
+                &correct_count,
+                d_correct,
+                sizeof(int),
+                cudaMemcpyDeviceToHost
+            ),
+            "cudaMemcpy accuracy counter to host")) {
+        report_cuda_error(
+            cudaFree(d_correct),
+            "cudaFree accuracy counter after copy failure"
+        );
+        return 0.0f;
+    }
+
+    // Release the temporary device allocation.
+    report_cuda_error(
+        cudaFree(d_correct),
+        "cudaFree accuracy counter"
+    );
+
+    // Return the fraction of correctly classified samples.
+    return static_cast<float>(correct_count) /
+           static_cast<float>(rows);
+}
 
 # Step 22 - time_train_step_ms (not yet solved)
 # TODO: implement
