@@ -438,8 +438,84 @@ float cross_entropy_loss(
     return total / static_cast<float>(rows);
 }
 
-# Step 9 - init_mlp (not yet solved)
-# TODO: implement
+# Step 9 - init_mlp
+#include <vector>  // Newly required for host-side parameter arrays
+
+struct MLP {
+    int in_dim, hidden, out_dim;
+    float *W1, *b1, *W2, *b2;  // Device pointers
+};
+
+// Forward declaration so init_mlp can clean up partial allocations.
+void free_mlp(MLP& m);
+
+MLP init_mlp(int in_dim, int hidden, int out_dim, unsigned seed) {
+    // Store dimensions and initialize all device pointers to nullptr.
+    MLP m = {
+        in_dim, hidden, out_dim,
+        nullptr, nullptr, nullptr, nullptr
+    };
+
+    // Host-side arrays, stored in row-major order.
+    std::vector<float> hW1(in_dim * hidden);
+    std::vector<float> hb1(hidden, 0.0f);
+    std::vector<float> hW2(hidden * out_dim);
+    std::vector<float> hb2(out_dim, 0.0f);
+
+    // Use one deterministic generator for both weight matrices.
+    unsigned state = seed;
+
+    // Initialize W1 using the specified fan-in scaling.
+    const float scale1 = sqrtf(6.0f / static_cast<float>(in_dim));
+
+    for (int i = 0; i < in_dim * hidden; ++i) {
+        hW1[i] = (2.0f * lcg_uniform(&state) - 1.0f) * scale1;
+    }
+
+    // Initialize W2 next, continuing with the same RNG state.
+    const float scale2 = sqrtf(6.0f / static_cast<float>(hidden));
+
+    for (int i = 0; i < hidden * out_dim; ++i) {
+        hW2[i] = (2.0f * lcg_uniform(&state) - 1.0f) * scale2;
+    }
+
+    // Upload all four arrays to device memory.
+    m.W1 = device_upload(hW1.data(), in_dim * hidden);
+    m.b1 = device_upload(hb1.data(), hidden);
+    m.W2 = device_upload(hW2.data(), hidden * out_dim);
+    m.b2 = device_upload(hb2.data(), out_dim);
+
+    // If any upload fails, release all successful allocations.
+    if (m.W1 == nullptr || m.b1 == nullptr ||
+        m.W2 == nullptr || m.b2 == nullptr) {
+        free_mlp(m);
+    }
+
+    return m;
+}
+
+void free_mlp(MLP& m) {
+    // Release each device allocation and clear its pointer.
+    if (m.W1 != nullptr) {
+        report_cuda_error(cudaFree(m.W1), "cudaFree W1");
+        m.W1 = nullptr;
+    }
+
+    if (m.b1 != nullptr) {
+        report_cuda_error(cudaFree(m.b1), "cudaFree b1");
+        m.b1 = nullptr;
+    }
+
+    if (m.W2 != nullptr) {
+        report_cuda_error(cudaFree(m.W2), "cudaFree W2");
+        m.W2 = nullptr;
+    }
+
+    if (m.b2 != nullptr) {
+        report_cuda_error(cudaFree(m.b2), "cudaFree b2");
+        m.b2 = nullptr;
+    }
+}
 
 # Step 10 - alloc_workspace (not yet solved)
 # TODO: implement
