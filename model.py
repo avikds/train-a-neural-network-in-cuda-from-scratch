@@ -821,8 +821,63 @@ void launch_matmul_tn(
     );
 }
 
-# Step 14 - matmul_nt_kernel (not yet solved)
-# TODO: implement
+# Step 14 - matmul_nt_kernel
+__global__ void matmul_nt_kernel(
+    const float* D,
+    const float* W,
+    float* C,
+    int R,
+    int J,
+    int I
+) {
+    // Map the x dimension to the output column i.
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Map the y dimension to the output row r.
+    int r = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // C has dimensions R x I.
+    if (r >= R || i >= I) {
+        return;
+    }
+
+    // Compute C[r][i] = sum_j D[r][j] * W[i][j].
+    float sum = 0.0f;
+
+    for (int j = 0; j < J; ++j) {
+        sum += D[r * J + j] * W[i * J + j];
+    }
+
+    // Store the result in row-major order.
+    C[r * I + i] = sum;
+}
+
+void launch_matmul_nt(
+    const float* D,
+    const float* W,
+    float* C,
+    int R,
+    int J,
+    int I
+) {
+    // Use 16 x 16 threads per block.
+    dim3 block(16, 16);
+
+    // Cover all I output columns and R output rows.
+    dim3 grid(
+        (I + block.x - 1) / block.x,
+        (R + block.y - 1) / block.y
+    );
+
+    // Launch the kernel without explicit synchronization.
+    matmul_nt_kernel<<<grid, block>>>(D, W, C, R, J, I);
+
+    // Report immediate kernel-launch errors.
+    report_cuda_error(
+        cudaGetLastError(),
+        "matmul_nt_kernel launch"
+    );
+}
 
 # Step 15 - column_sum_kernel (not yet solved)
 # TODO: implement
