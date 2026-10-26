@@ -763,8 +763,63 @@ void launch_softmax_ce_grad(
     );
 }
 
-# Step 13 - matmul_tn_kernel (not yet solved)
-# TODO: implement
+# Step 13 - matmul_tn_kernel
+__global__ void matmul_tn_kernel(
+    const float* A,
+    const float* D,
+    float* C,
+    int R,
+    int I,
+    int J
+) {
+    // Map CUDA thread coordinates to the output matrix C.
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // C has dimensions I x J.
+    if (i >= I || j >= J) {
+        return;
+    }
+
+    // Compute C[i][j] = sum_r A[r][i] * D[r][j].
+    float sum = 0.0f;
+
+    for (int r = 0; r < R; ++r) {
+        // A is stored as R x I, and D is stored as R x J.
+        sum += A[r * I + i] * D[r * J + j];
+    }
+
+    // Store the output in row-major order.
+    C[i * J + j] = sum;
+}
+
+void launch_matmul_tn(
+    const float* A,
+    const float* D,
+    float* C,
+    int R,
+    int I,
+    int J
+) {
+    // Use 16 x 16 threads per block.
+    dim3 block(16, 16);
+
+    // Cover all J output columns and I output rows.
+    dim3 grid(
+        (J + block.x - 1) / block.x,
+        (I + block.y - 1) / block.y
+    );
+
+    // Launch the transposed matrix multiplication kernel.
+    // No explicit synchronization is performed here.
+    matmul_tn_kernel<<<grid, block>>>(A, D, C, R, I, J);
+
+    // Report immediate kernel-launch errors.
+    report_cuda_error(
+        cudaGetLastError(),
+        "matmul_tn_kernel launch"
+    );
+}
 
 # Step 14 - matmul_nt_kernel (not yet solved)
 # TODO: implement
