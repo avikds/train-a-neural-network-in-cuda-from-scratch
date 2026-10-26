@@ -219,8 +219,33 @@ void launch_add_bias(float* Z, const float* b, int rows, int cols) {
     report_cuda_error(cudaGetLastError(), "add_bias_kernel launch");
 }
 
-# Step 6 - relu_kernel (not yet solved)
-# TODO: implement
+# Step 6 - relu_kernel
+__global__ void relu_kernel(float* Z, int n) {
+    // Each thread handles one element.
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Ignore threads outside the array.
+    if (i >= n) {
+        return;
+    }
+
+    // ReLU: replace negative values with zero.
+    Z[i] = (Z[i] > 0.0f) ? Z[i] : 0.0f;
+}
+
+void launch_relu(float* Z, int n) {
+    // Use 256 threads per block.
+    const int threads_per_block = 256;
+
+    // Calculate enough blocks to cover all n elements.
+    const int blocks = (n + threads_per_block - 1) / threads_per_block;
+
+    // Launch the ReLU kernel.
+    relu_kernel<<<blocks, threads_per_block>>>(Z, n);
+
+    // Check for immediate kernel-launch errors without synchronizing.
+    report_cuda_error(cudaGetLastError(), "relu_kernel launch");
+}
 
 # Step 7 - softmax_rows_kernel (not yet solved)
 # TODO: implement
