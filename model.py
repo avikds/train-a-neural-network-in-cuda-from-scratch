@@ -247,8 +247,73 @@ void launch_relu(float* Z, int n) {
     report_cuda_error(cudaGetLastError(), "relu_kernel launch");
 }
 
-# Step 7 - softmax_rows_kernel (not yet solved)
-# TODO: implement
+# Step 7 - softmax_rows_kernel
+__global__ void softmax_rows_kernel(
+    const float* logits,
+    float* probs,
+    int rows,
+    int cols
+) {
+    // Assign one CUDA thread to each row.
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Ignore threads outside the matrix.
+    if (row >= rows) {
+        return;
+    }
+
+    int offset = row * cols;
+
+    // Find the maximum logit in this row for numerical stability.
+    float max_val = logits[offset];
+
+    for (int j = 1; j < cols; ++j) {
+        float value = logits[offset + j];
+        if (value > max_val) {
+            max_val = value;
+        }
+    }
+
+    // Compute the sum of exponentials after subtracting the maximum.
+    float sum_exp = 0.0f;
+
+    for (int j = 0; j < cols; ++j) {
+        sum_exp += expf(logits[offset + j] - max_val);
+    }
+
+    // Normalize the exponentials to obtain probabilities.
+    // This also works in place when probs == logits because the sum
+    // has already been computed before any output element is overwritten.
+    for (int j = 0; j < cols; ++j) {
+        probs[offset + j] =
+            expf(logits[offset + j] - max_val) / sum_exp;
+    }
+}
+
+void launch_softmax_rows(
+    const float* logits,
+    float* probs,
+    int rows,
+    int cols
+) {
+    // Use 128 threads per block, with one thread per row.
+    const int threads_per_block = 128;
+
+    // Calculate enough blocks to cover all rows.
+    const int blocks =
+        (rows + threads_per_block - 1) / threads_per_block;
+
+    // Launch the softmax kernel without synchronizing.
+    softmax_rows_kernel<<<blocks, threads_per_block>>>(
+        logits, probs, rows, cols
+    );
+
+    // Report any immediate kernel-launch error.
+    report_cuda_error(
+        cudaGetLastError(),
+        "softmax_rows_kernel launch"
+    );
+}
 
 # Step 8 - cross_entropy_kernel (not yet solved)
 # TODO: implement
