@@ -970,8 +970,62 @@ void launch_relu_backward(float* dH, const float* H, int n) {
     );
 }
 
-# Step 17 - backward_mlp (not yet solved)
-# TODO: implement
+# Step 17 - backward_mlp
+void backward_mlp(
+    const MLP& m,
+    const float* X,
+    const int* labels,
+    int batch,
+    Workspace& w
+) {
+    // 1. Gradient of mean cross-entropy loss with respect to output logits.
+    // dZ2: batch x out_dim
+    launch_softmax_ce_grad(
+        w.P, labels, w.dZ2, batch, m.out_dim
+    );
+
+    // 2. Second-layer weight gradient: dW2 = H^T @ dZ2.
+    // H:   batch x hidden
+    // dZ2: batch x out_dim
+    // dW2: hidden x out_dim
+    launch_matmul_tn(
+        w.H, w.dZ2, w.dW2,
+        batch, m.hidden, m.out_dim
+    );
+
+    // Second-layer bias gradient: db2 = column_sum(dZ2).
+    launch_column_sum(
+        w.dZ2, w.db2, batch, m.out_dim
+    );
+
+    // 3. Propagate the gradient through the second-layer weights.
+    // dH = dZ2 @ W2^T
+    // dH: batch x hidden
+    launch_matmul_nt(
+        w.dZ2, m.W2, w.dH,
+        batch, m.out_dim, m.hidden
+    );
+
+    // Apply the derivative of ReLU using saved post-ReLU activations H.
+    // Gradients are zeroed wherever H <= 0.
+    launch_relu_backward(
+        w.dH, w.H, batch * m.hidden
+    );
+
+    // 4. First-layer weight gradient: dW1 = X^T @ dH.
+    // X:   batch x in_dim
+    // dH:  batch x hidden
+    // dW1: in_dim x hidden
+    launch_matmul_tn(
+        X, w.dH, w.dW1,
+        batch, m.in_dim, m.hidden
+    );
+
+    // First-layer bias gradient: db1 = column_sum(dH).
+    launch_column_sum(
+        w.dH, w.db1, batch, m.hidden
+    );
+}
 
 # Step 18 - sgd_update_kernel (not yet solved)
 # TODO: implement
