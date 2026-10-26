@@ -1075,8 +1075,47 @@ void launch_sgd_update(
     );
 }
 
-# Step 19 - train_step (not yet solved)
-# TODO: implement
+# Step 19 - train_step
+float train_step(
+    MLP& m,
+    Workspace& w,
+    const float* X,
+    const int* labels,
+    int batch,
+    float lr
+) {
+    // 1. Forward pass: compute hidden activations and class probabilities.
+    forward_mlp(m, X, batch, w);
+
+    // 2. Compute the loss before updating the parameters.
+    float loss = cross_entropy_loss(w.P, labels, batch, m.out_dim);
+
+    // 3. Backward pass: compute gradients for all four parameters.
+    backward_mlp(m, X, labels, batch, w);
+
+    // 4. Update W1 using its gradient.
+    launch_sgd_update(
+        m.W1, w.dW1, lr, m.in_dim * m.hidden
+    );
+
+    // Update the first-layer bias.
+    launch_sgd_update(
+        m.b1, w.db1, lr, m.hidden
+    );
+
+    // Update W2 using its gradient.
+    launch_sgd_update(
+        m.W2, w.dW2, lr, m.hidden * m.out_dim
+    );
+
+    // Update the second-layer bias.
+    launch_sgd_update(
+        m.b2, w.db2, lr, m.out_dim
+    );
+
+    // Return the loss measured before the parameter updates.
+    return loss;
+}
 
 # Step 20 - train_mlp (not yet solved)
 # TODO: implement
